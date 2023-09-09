@@ -1,4 +1,4 @@
-﻿using FrostySdk.Interfaces;
+using FrostySdk.Interfaces;
 using FrostySdk.IO;
 using FrostySdk.Managers;
 using System;
@@ -299,6 +299,7 @@ namespace MeshSetPlugin
         private FbxGeometryConverter geomConverter;
         private bool flattenHierarchy = true;
         private bool exportSingleLod = false;
+        private uint exportLod = 0;
         private FrostyTaskWindow task;
 
         public FBXExporter(FrostyTaskWindow inTask)
@@ -309,10 +310,11 @@ namespace MeshSetPlugin
         /// <summary>
         /// Exports the specified mesh to a FBX file
         /// </summary>
-        public void ExportFBX(dynamic meshAsset, string filename, string fbxVersion, string units, bool inFlattenHierarchy, bool inExportSingleLod, string skeleton, string fileType, params MeshSet[] meshSets)
+        public void ExportFBX(dynamic meshAsset, string filename, string fbxVersion, string units, bool inFlattenHierarchy, bool inExportSingleLod, uint inExportLod, string skeleton, string fileType, params MeshSet[] meshSets)
         {
             flattenHierarchy = inFlattenHierarchy;
             exportSingleLod = inExportSingleLod;
+            exportLod = inExportLod;
             using (FbxManager manager = new FbxManager())
             {
                 FbxIOSettings settings = new FbxIOSettings(manager, FbxIOSettings.IOSROOT);
@@ -349,10 +351,15 @@ namespace MeshSetPlugin
                 totalExportCount++;
                 foreach (MeshSet meshSet in meshSets)
                 {
+                    uint currentLod = 0;
                     foreach (MeshSetLod lod in meshSet.Lods)
                     {
-                        foreach (MeshSetSection section in lod.Sections)
-                            totalExportCount += (section.Name != "") ? 1 : 0;
+                        if (!exportSingleLod || (exportLod == currentLod))
+                        {
+                            foreach (MeshSetSection section in lod.Sections)
+                                totalExportCount += (section.Name != "") ? 1 : 0;
+                        }
+                        ++currentLod;
                     }
                 }
 
@@ -376,14 +383,15 @@ namespace MeshSetPlugin
                 currentProgress++;
                 foreach (MeshSet meshSet in meshSets)
                 {
+                    uint currentLod = 0;
                     foreach (MeshSetLod lod in meshSet.Lods)
                     {
-                        task.Update("Writing " + lod.String03);
-                        FBXCreateMesh(scene, lod, boneNodes);
-                        if (exportSingleLod)
+                        if (!exportSingleLod || (exportLod == currentLod))
                         {
-                            break;
+                            task.Update("Writing " + lod.String03);
+                            FBXCreateMesh(scene, lod, boneNodes);
                         }
+                        ++currentLod;
                     }
                 }
 
@@ -4020,6 +4028,7 @@ namespace MeshSetPlugin
             string Scale = Config.Get<string>("MeshSetExportScale", "Centimeters", ConfigScope.Game);
             bool flattenHierarchy = Config.Get<bool>("MeshSetExportFlattenHierarchy", false, ConfigScope.Game);
             bool exportSingleLod = Config.Get<bool>("MeshSetExportExportSingleLod", false, ConfigScope.Game);
+            uint exportLod = (uint)screen.CurrentLOD;
             bool exportAdditionalMeshes = Config.Get<bool>("MeshSetExportExportAdditionalMeshes", false, ConfigScope.Game);
             string skeleton = Config.Get<string>("MeshSetExportSkeleton", "", ConfigScope.Game);
 
@@ -4033,6 +4042,7 @@ namespace MeshSetPlugin
             settings.Scale = (MeshExportScale)Enum.Parse(typeof(MeshExportScale), Scale);
             settings.FlattenHierarchy = flattenHierarchy;
             settings.ExportSingleLod = exportSingleLod;
+            settings.ExportLod = exportLod;
             settings.ExportAdditionalMeshes = exportAdditionalMeshes;
 
             if (settings is SkinnedMeshExportSettings exportSettings)
@@ -4069,7 +4079,7 @@ namespace MeshSetPlugin
                     FrostyTaskWindow.Show("Exporting MeshSet", "", (task) =>
                     {
                         FBXExporter exporter = new FBXExporter(task);
-                        exporter.ExportFBX(RootObject, sfd.FileName, settings.Version.ToString().Replace("FBX_", ""), settings.Scale.ToString(), settings.FlattenHierarchy, settings.ExportSingleLod, skeleton, fileTypes[sfd.FilterIndex - 1], meshSets.ToArray());
+                        exporter.ExportFBX(RootObject, sfd.FileName, settings.Version.ToString().Replace("FBX_", ""), settings.Scale.ToString(), settings.FlattenHierarchy, settings.ExportSingleLod, settings.ExportLod, skeleton, fileTypes[sfd.FilterIndex - 1], meshSets.ToArray());
                     });
 
                     logger.Log("Exported {0} to {1}", entry.Name, sfd.FileName);
@@ -4079,6 +4089,7 @@ namespace MeshSetPlugin
                     Config.Add("MeshSetExportScale", settings.Scale.ToString(), ConfigScope.Game);
                     Config.Add("MeshSetExportFlattenHierarchy", settings.FlattenHierarchy, ConfigScope.Game);
                     Config.Add("MeshSetExportExportSingleLod", settings.ExportSingleLod, ConfigScope.Game);
+                    // NOTE:  Explicitly NOT saving ExportLod, as it is above initially derived each time from the currently displayed Lod
                     Config.Add("MeshSetExportExportAdditionalMeshes", settings.ExportAdditionalMeshes, ConfigScope.Game);
 
                     //Config.Add("MeshSetExport", "Version", settings.Version.ToString());
